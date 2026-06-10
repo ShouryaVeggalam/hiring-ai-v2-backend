@@ -1,7 +1,7 @@
 """Job Intelligence endpoints (/job)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.api.deps import CurrentUser, DbSession, require_recruiter
 from app.schemas.agent import AgentRunResult
@@ -46,10 +46,14 @@ def update_job(job_id: str, payload: JobUpdate, db: DbSession) -> JobRead:
 
 
 @router.delete(
-    "/openings/{job_id}", status_code=204, dependencies=[Depends(require_recruiter)]
+    "/openings/{job_id}",
+    status_code=204,
+    response_class=Response,
+    dependencies=[Depends(require_recruiter)],
 )
-def delete_job(job_id: str, db: DbSession) -> None:
+def delete_job(job_id: str, db: DbSession) -> Response:
     JobService(db).delete(job_id)
+    return Response(status_code=204)
 
 
 @router.post("/blueprint", response_model=AgentRunResult, dependencies=[Depends(require_recruiter)])

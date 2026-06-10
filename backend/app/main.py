@@ -87,7 +87,7 @@ def create_app() -> FastAPI:
     # CORS. A wildcard origin cannot be combined with credentials per the
     # CORS spec, so disable credentials in that case (the API uses bearer
     # tokens, not cookies, so this is safe).
-    origins = settings.BACKEND_CORS_ORIGINS or ["*"]
+    origins = settings.cors_origins
     allow_all = origins == ["*"]
     app.add_middleware(
         CORSMiddleware,

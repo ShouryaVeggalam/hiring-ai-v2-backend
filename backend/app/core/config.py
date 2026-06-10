@@ -7,9 +7,7 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from typing import Any
 
-from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,7 +30,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
-    BACKEND_CORS_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
+    # Stored as a raw string so pydantic-settings does NOT try to JSON-decode
+    # it from the environment (which crashed startup). Parsed via `cors_origins`.
+    # Accepts: "*", a comma-separated list, or a JSON array string.
+    BACKEND_CORS_ORIGINS: str = "*"
 
     # ---- Database ----
     POSTGRES_USER: str = "celestra"
@@ -63,17 +64,23 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER_PASSWORD: str = "Admin@12345"
     FIRST_SUPERUSER_NAME: str = "Celestra Admin"
 
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    @classmethod
-    def _assemble_cors(cls, v: Any) -> Any:
-        if isinstance(v, str):
-            stripped = v.strip()
-            if stripped.startswith("["):
-                return json.loads(stripped)
-            if stripped == "*":
-                return ["*"]
-            return [i.strip() for i in stripped.split(",") if i.strip()]
-        return v
+    @property
+    def cors_origins(self) -> list[str]:
+        """Parse BACKEND_CORS_ORIGINS into a list of origins.
+
+        Accepts ``*``, a comma-separated list, or a JSON array string.
+        """
+        raw = (self.BACKEND_CORS_ORIGINS or "").strip()
+        if not raw or raw == "*":
+            return ["*"]
+        if raw.startswith("["):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    return [str(o).strip() for o in parsed if str(o).strip()]
+            except json.JSONDecodeError:
+                pass
+        return [o.strip() for o in raw.split(",") if o.strip()]
 
     @property
     def is_production(self) -> bool:

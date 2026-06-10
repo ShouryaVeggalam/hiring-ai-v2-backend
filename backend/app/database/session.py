@@ -8,14 +8,19 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
-# pool_pre_ping protects against stale connections in long-running workers.
+# Smaller pool for free-tier hosts (Render, Railway, …).
+_pool_kwargs: dict = {"pool_pre_ping": True, "future": True}
+if settings.is_production:
+    _pool_kwargs.update(pool_size=5, max_overflow=5)
+    if "postgresql" in settings.sqlalchemy_database_uri:
+        _pool_kwargs["connect_args"] = {"connect_timeout": 10}
+else:
+    _pool_kwargs.update(pool_size=10, max_overflow=20)
+
 engine = create_engine(
     settings.sqlalchemy_database_uri,
     echo=settings.SQL_ECHO,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    future=True,
+    **_pool_kwargs,
 )
 
 SessionLocal = sessionmaker(

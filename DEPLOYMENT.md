@@ -44,6 +44,24 @@ Docs: https://celestra-hiring-api.onrender.com/api/v1/docs
 
 > **Free-tier note:** the web service sleeps after ~15 min of inactivity and cold-starts on the next request (a few seconds). The free PostgreSQL instance expires ~30 days after creation. Background Celery workers are not included on the free tier (see comments in `render.yaml`); the API runs fully without them.
 
+### Troubleshooting deploy failures
+
+If Render shows **"Exited with status 1 while running your code"**, check the **Logs** tab. Common causes and fixes:
+
+| Symptom | Fix |
+|---------|-----|
+| `ValidationError` on `BACKEND_CORS_ORIGINS` | Set env var to `*` (not a JSON string) |
+| `bcrypt` / `passlib` error during startup | Fixed in latest commit — redeploy |
+| `SSL connection required` / DB connect error | Ensure `DATABASE_URL` is wired from the Render Postgres instance |
+| `DATABASE_URL` missing | Blueprint must link `celestra-db` → web service |
+| Build OOM on free tier | LangChain deps are heavy; build may take 3–5 min — wait and retry |
+
+After redeploying, verify:
+```
+GET https://<your-service>.onrender.com/api/v1/health
+```
+Should return `{"status":"ok",...}` even before the database is fully ready.
+
 ---
 
 ## Part 2 — Frontend on Vercel (free)

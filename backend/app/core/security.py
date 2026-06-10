@@ -5,27 +5,29 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 TokenType = Literal["access", "refresh"]
 
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password."""
-    return _pwd_context.hash(password)
+    """Hash a plaintext password using bcrypt."""
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against its hash."""
     try:
-        return _pwd_context.verify(plain_password, hashed_password)
-    except ValueError:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except (ValueError, TypeError):
         return False
 
 

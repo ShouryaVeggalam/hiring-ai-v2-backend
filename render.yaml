@@ -15,8 +15,8 @@ services:
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /api/v1/health
     autoDeploy: true
     envVars:
@@ -58,7 +58,7 @@ services:
       #   ["https://hiring-ai-v2-frontend.vercel.app"]
       # Leave as ["*"] to allow any origin (bearer-token API, no cookies).
       - key: BACKEND_CORS_ORIGINS
-        value: '["*"]'
+        value: "*"
       - key: FIRST_SUPERUSER_EMAIL
         value: admin@celestra.ai
       - key: FIRST_SUPERUSER_PASSWORD

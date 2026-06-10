@@ -5,10 +5,11 @@ documented in a single place.
 """
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from typing import Any
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,8 +66,13 @@ class Settings(BaseSettings):
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
     def _assemble_cors(cls, v: Any) -> Any:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",") if i.strip()]
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                return json.loads(stripped)
+            if stripped == "*":
+                return ["*"]
+            return [i.strip() for i in stripped.split(",") if i.strip()]
         return v
 
     @property
@@ -74,31 +80,26 @@ class Settings(BaseSettings):
         return self.APP_ENV.lower() == "production"
 
     @staticmethod
-    def _normalize_db_url(url: str) -> str:
-        """Normalise provider-supplied URLs to a psycopg2 driver URL.
-
-        Managed hosts (Render, Heroku, Railway, …) hand out URLs like
-        ``postgres://`` or ``postgresql://``; SQLAlchemy needs an explicit
-        driver, so we coerce them to ``postgresql+psycopg2://``. SQLite URLs
-        are passed through untouched.
-        """
+    def _normalize_db_url(url: str, *, production: bool = False) -> str:
+        """Normalise provider-supplied URLs to a psycopg2 driver URL."""
         if url.startswith("sqlite"):
             return url
         if url.startswith("postgres://"):
             url = "postgresql://" + url[len("postgres://"):]
         if url.startswith("postgresql://"):
             url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+        # Managed Postgres (Render, Heroku, …) requires SSL in production.
+        is_local = any(h in url for h in ("@localhost", "@127.0.0.1", "@postgres:"))
+        if production and "postgresql" in url and not is_local and "sslmode=" not in url:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}sslmode=require"
         return url
 
     @property
     def sqlalchemy_database_uri(self) -> str:
-        """Resolve the SQLAlchemy connection URI.
-
-        Honours an explicit ``DATABASE_URL`` when provided, otherwise builds
-        one from the individual Postgres settings.
-        """
+        """Resolve the SQLAlchemy connection URI."""
         if self.DATABASE_URL:
-            return self._normalize_db_url(self.DATABASE_URL)
+            return self._normalize_db_url(self.DATABASE_URL, production=self.is_production)
         return (
             f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"

@@ -50,11 +50,21 @@ def _seed_superuser() -> None:
 async def lifespan(_: FastAPI):
     configure_logging()
     logger.info("startup", app=settings.APP_NAME, env=settings.APP_ENV, version=__version__)
-    # Create tables when enabled (default). For controlled rollouts use Alembic
-    # and set AUTO_CREATE_TABLES=false.
+
     if settings.AUTO_CREATE_TABLES or not settings.is_production:
-        Base.metadata.create_all(bind=engine)
-    _seed_superuser()
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("database_tables_ready")
+        except Exception as exc:
+            # Don't crash the process — Render will retry; DB may still be
+            # provisioning on first blueprint deploy.
+            logger.error("database_init_failed", error=str(exc), exc_info=True)
+
+    try:
+        _seed_superuser()
+    except Exception as exc:
+        logger.error("superuser_seed_failed", error=str(exc), exc_info=True)
+
     yield
     logger.info("shutdown")
 

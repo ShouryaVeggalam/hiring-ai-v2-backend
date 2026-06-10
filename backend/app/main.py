@@ -13,11 +13,12 @@ from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.database.base import Base
-from app.database.session import SessionLocal, engine
+from app.database.session import SessionLocal, get_engine
 
 # Import models so they register on Base.metadata.
 import app.models  # noqa: F401
 
+configure_logging()
 logger = get_logger(__name__)
 
 
@@ -53,7 +54,7 @@ async def lifespan(_: FastAPI):
 
     if settings.AUTO_CREATE_TABLES or not settings.is_production:
         try:
-            Base.metadata.create_all(bind=engine)
+            Base.metadata.create_all(bind=get_engine())
             logger.info("database_tables_ready")
         except Exception as exc:
             # Don't crash the process — Render will retry; DB may still be
@@ -107,4 +108,8 @@ def create_app() -> FastAPI:
     return app
 
 
-app = create_app()
+try:
+    app = create_app()
+except Exception:
+    logger.exception("app_create_failed")
+    raise

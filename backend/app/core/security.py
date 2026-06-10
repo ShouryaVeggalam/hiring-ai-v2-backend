@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError
@@ -72,8 +73,12 @@ def create_refresh_token(subject: str | int) -> str:
 def decode_token(token: str, expected_type: TokenType | None = None) -> dict[str, Any]:
     """Decode and validate a JWT, optionally enforcing the token type."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-    except JWTError as exc:  # invalid signature / expired / malformed
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+    except PyJWTError as exc:
         raise AuthenticationError("Could not validate credentials") from exc
 
     if expected_type and payload.get("type") != expected_type:

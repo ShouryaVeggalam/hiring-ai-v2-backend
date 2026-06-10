@@ -8,14 +8,19 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# On Render, only use real environment variables — never a local .env file.
+_ENV_FILE = None if os.getenv("RENDER") else ".env"
 
 
 class Settings(BaseSettings):
     """Strongly typed application settings."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore",

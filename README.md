@@ -6,7 +6,7 @@ This repository contains the **backend**. The **frontend** lives in a separate r
 
 | Layer | Repository |
 |-------|------------|
-| Backend (this repo) | `hiring-ai-v2` |
+| Backend (this repo) | https://github.com/ShouryaVeggalam/hiring-ai-v2-backend |
 | Frontend | https://github.com/ShouryaVeggalam/hiring-ai-v2-frontend |
 
 ---
@@ -14,7 +14,7 @@ This repository contains the **backend**. The **frontend** lives in a separate r
 ## Repository layout
 
 ```
-hiring-ai-v2/
+hiring-ai-v2-backend/
 └── backend/        # FastAPI backend (see backend/README.md)
 ```
 

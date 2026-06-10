@@ -1,0 +1,35 @@
+# Production dependencies for Render (no dev/test, no LLM packages — offline mode).
+# Full stack including LangChain: see requirements.txt
+
+# ---- Web framework ----
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.17
+websockets==13.1
+
+# ---- Settings & validation ----
+pydantic==2.10.3
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# ---- Database ----
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+greenlet==3.1.1
+
+# ---- Auth & security ----
+bcrypt==4.2.1
+PyJWT==2.10.1
+
+# ---- Resume processing ----
+pypdf==5.1.0
+python-docx==1.1.2
+
+# ---- Observability ----
+structlog==24.4.0
+prometheus-client==0.21.1
+
+# ---- Utilities ----
+httpx==0.28.0
+tenacity==9.0.0
+python-dotenv==1.0.1

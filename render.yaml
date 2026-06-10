@@ -1,6 +1,5 @@
 # Render Blueprint — Celestra Hiring AI backend
-# Deploy: https://dashboard.render.com  →  New  →  Blueprint  →  select this repo.
-# Everything below uses Render's FREE tier.
+# Deploy: dashboard.render.com → New → Blueprint → select this repo.
 
 databases:
   - name: celestra-db
@@ -9,19 +8,20 @@ databases:
     user: celestra
 
 services:
-  # ---- FastAPI web service ----
   - type: web
     name: celestra-hiring-api
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
-    startCommand: bash start.sh
+    buildCommand: pip install --upgrade pip && pip install -r requirements-prod.txt
+    startCommand: uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /api/v1/health
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.7"
+      - key: RENDER
+        value: "true"
       - key: APP_ENV
         value: production
       - key: DEBUG
@@ -30,35 +30,15 @@ services:
         value: "true"
       - key: LLM_OFFLINE_MODE
         value: "true"
-      # Generated automatically; rotate any time in the dashboard.
       - key: SECRET_KEY
         generateValue: true
-      # Wired automatically from the managed Postgres above.
       - key: DATABASE_URL
         fromDatabase:
           name: celestra-db
           property: connectionString
-      # Wired automatically from the Key Value (Redis) instance below.
-      - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: celestra-redis
-          property: connectionString
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: keyvalue
-          name: celestra-redis
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          type: keyvalue
-          name: celestra-redis
-          property: connectionString
-      # Comma-separated origins, or "*" for any. After deploying the frontend
-      # set e.g.  https://hiring-ai-v2-frontend.vercel.app
-      # (bearer-token API, no cookies — wildcard is safe).
+      # Allow Vercel frontend + local dev. Add preview URLs if needed.
       - key: BACKEND_CORS_ORIGINS
-        value: "*"
+        value: "https://hiring-ai-v2-frontend.vercel.app,https://hiring-ai-v2-frontend-shouryaveggalams-projects.vercel.app,http://localhost:5173,http://localhost:3000"
       - key: FIRST_SUPERUSER_EMAIL
         value: admin@celestra.ai
       - key: FIRST_SUPERUSER_PASSWORD
@@ -66,29 +46,5 @@ services:
       - key: FIRST_SUPERUSER_NAME
         value: Celestra Admin
 
-  # ---- Redis / Key Value (used by Celery; optional for the web API) ----
-  - type: keyvalue
-    name: celestra-redis
-    plan: free
-    ipAllowList: []   # only reachable from your Render services
-
-# NOTE on background workers:
-# Render's free tier does not include always-on background workers, so the
-# Celery worker/beat are intentionally omitted here. The API runs fully without
-# them (scheduled jobs simply won't fire). To enable them on a paid plan, add:
-#
-#   - type: worker
-#     name: celestra-worker
-#     runtime: python
-#     rootDir: backend
-#     buildCommand: pip install -r requirements.txt
-#     startCommand: celery -A app.workers.celery_app worker --loglevel=info
-#     envVars: [ ...same as web... ]
-#
-#   - type: worker
-#     name: celestra-beat
-#     runtime: python
-#     rootDir: backend
-#     buildCommand: pip install -r requirements.txt
-#     startCommand: celery -A app.workers.celery_app beat --loglevel=info
-#     envVars: [ ...same as web... ]
+# Redis removed from free blueprint — not needed for the web API on free tier.
+# Celery workers are not available on Render free tier anyway.

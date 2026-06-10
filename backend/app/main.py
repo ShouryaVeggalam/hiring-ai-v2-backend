@@ -1,6 +1,7 @@
 """Celestra Hiring AI — FastAPI application entry point."""
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,22 +9,28 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import make_asgi_app
 
 from app import __version__
-from app.api.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
-from app.database.base import Base
-from app.database.session import SessionLocal, get_engine
-
-# Import models so they register on Base.metadata.
-import app.models  # noqa: F401
 
 configure_logging()
 logger = get_logger(__name__)
 
+_db_setup_lock = asyncio.Lock()
+_db_setup_done = False
 
-def _seed_superuser() -> None:
-    """Create the first admin user if none exists."""
+
+def _run_db_setup() -> None:
+    """Create tables and seed admin user (runs in a thread)."""
+    from app.database.base import Base
+    from app.database.session import SessionLocal, get_engine
+
+    import app.models  # noqa: F401 — register ORM metadata
+
+    if settings.AUTO_CREATE_TABLES or not settings.is_production:
+        Base.metadata.create_all(bind=get_engine())
+        logger.info("database_tables_ready")
+
     from app.core.constants import UserRole
     from app.core.security import hash_password
     from app.repositories.user import UserRepository
@@ -31,46 +38,53 @@ def _seed_superuser() -> None:
     db = SessionLocal()
     try:
         repo = UserRepository(db)
-        if repo.get_by_email(settings.FIRST_SUPERUSER_EMAIL):
-            return
-        repo.create(
-            email=settings.FIRST_SUPERUSER_EMAIL,
-            hashed_password=hash_password(settings.FIRST_SUPERUSER_PASSWORD),
-            full_name=settings.FIRST_SUPERUSER_NAME,
-            role=UserRole.ADMIN,
-            is_active=True,
-            is_superuser=True,
-        )
-        db.commit()
-        logger.info("superuser_seeded", email=settings.FIRST_SUPERUSER_EMAIL)
+        if not repo.get_by_email(settings.FIRST_SUPERUSER_EMAIL):
+            repo.create(
+                email=settings.FIRST_SUPERUSER_EMAIL,
+                hashed_password=hash_password(settings.FIRST_SUPERUSER_PASSWORD),
+                full_name=settings.FIRST_SUPERUSER_NAME,
+                role=UserRole.ADMIN,
+                is_active=True,
+                is_superuser=True,
+            )
+            db.commit()
+            logger.info("superuser_seeded", email=settings.FIRST_SUPERUSER_EMAIL)
     finally:
         db.close()
 
 
+async def _init_db_background() -> None:
+    """Run DB setup without blocking the server from binding to PORT."""
+    global _db_setup_done
+    async with _db_setup_lock:
+        if _db_setup_done:
+            return
+        try:
+            await asyncio.to_thread(_run_db_setup)
+            _db_setup_done = True
+        except Exception as exc:
+            logger.error("database_setup_failed", error=str(exc), exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    configure_logging()
-    logger.info("startup", app=settings.APP_NAME, env=settings.APP_ENV, version=__version__)
-
-    if settings.AUTO_CREATE_TABLES or not settings.is_production:
-        try:
-            Base.metadata.create_all(bind=get_engine())
-            logger.info("database_tables_ready")
-        except Exception as exc:
-            # Don't crash the process — Render will retry; DB may still be
-            # provisioning on first blueprint deploy.
-            logger.error("database_init_failed", error=str(exc), exc_info=True)
-
-    try:
-        _seed_superuser()
-    except Exception as exc:
-        logger.error("superuser_seed_failed", error=str(exc), exc_info=True)
-
+    """Non-blocking startup so Render health checks pass immediately."""
+    logger.info(
+        "startup",
+        app=settings.APP_NAME,
+        env=settings.APP_ENV,
+        version=__version__,
+    )
+    # Fire-and-forget — do NOT await. Render requires PORT binding quickly.
+    asyncio.create_task(_init_db_background())
     yield
     logger.info("shutdown")
 
 
 def create_app() -> FastAPI:
+    """Application factory (used by uvicorn --factory)."""
+    from app.api.router import api_router
+
     app = FastAPI(
         title=settings.APP_NAME,
         description=(
@@ -85,9 +99,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS. A wildcard origin cannot be combined with credentials per the
-    # CORS spec, so disable credentials in that case (the API uses bearer
-    # tokens, not cookies, so this is safe).
     origins = settings.cors_origins
     allow_all = origins == ["*"]
     app.add_middleware(
@@ -100,16 +111,5 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
-
-    # Prometheus metrics at /metrics
-    metrics_app = make_asgi_app()
-    app.mount("/metrics", metrics_app)
-
+    app.mount("/metrics", make_asgi_app())
     return app
-
-
-try:
-    app = create_app()
-except Exception:
-    logger.exception("app_create_failed")
-    raise

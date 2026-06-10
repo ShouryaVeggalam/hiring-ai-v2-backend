@@ -1,121 +1,93 @@
 # Deployment Guide — Celestra Hiring AI
 
-Free deployment using **Render** (backend) and **Vercel** (frontend).
-
-| Component | Platform | Repo |
-|-----------|----------|------|
-| Backend (FastAPI + Postgres + Redis) | Render | https://github.com/ShouryaVeggalam/hiring-ai-v2-backend |
-| Frontend | Vercel | https://github.com/ShouryaVeggalam/hiring-ai-v2-frontend |
+| Component | Platform | URL |
+|-----------|----------|-----|
+| Backend | **Render** (free) | `https://celestra-hiring-api.onrender.com` |
+| Frontend | **Vercel** (free) | `https://hiring-ai-v2-frontend.vercel.app` |
 
 ---
 
-## Part 1 — Backend on Render (free)
+## Backend on Render
 
-The repo ships a [`render.yaml`](render.yaml) Blueprint that provisions everything on Render's free tier:
-- a **web service** (FastAPI),
-- a **PostgreSQL** database,
-- a **Key Value (Redis)** instance.
+### If deploy keeps failing — update these manually
 
-### Steps
+Go to **Render Dashboard → celestra-hiring-api → Settings** and set:
 
-1. Go to <https://dashboard.render.com> and sign in with GitHub.
-2. Click **New → Blueprint**.
-3. Select the **`hiring-ai-v2-backend`** repository.
-4. Render reads `render.yaml` and shows the services to create. Click **Apply**.
-5. Wait for the build to finish (~3–5 min). Tables are created automatically on first boot (`AUTO_CREATE_TABLES=true`).
+| Setting | Value |
+|---------|-------|
+| **Root Directory** | `backend` |
+| **Build Command** | `pip install --upgrade pip && pip install -r requirements-prod.txt` |
+| **Start Command** | `uvicorn app.main:create_app --factory --host 0.0.0.0 --port $PORT --workers 1` |
+| **Health Check Path** | `/api/v1/health` |
 
-Your API will be live at:
+**Environment variables** (required):
 
-```
-https://celestra-hiring-api.onrender.com
-```
+| Key | Value |
+|-----|-------|
+| `RENDER` | `true` |
+| `APP_ENV` | `production` |
+| `DEBUG` | `false` |
+| `LLM_OFFLINE_MODE` | `true` |
+| `AUTO_CREATE_TABLES` | `true` |
+| `DATABASE_URL` | *(link to Postgres — Internal URL)* |
+| `SECRET_KEY` | *(generate random 64-char string)* |
+| `BACKEND_CORS_ORIGINS` | `*` |
+| `FIRST_SUPERUSER_EMAIL` | `admin@celestra.ai` |
+| `FIRST_SUPERUSER_PASSWORD` | *(pick a strong password)* |
 
-(the exact subdomain is shown in the dashboard).
+> **Important:** `BACKEND_CORS_ORIGINS` must be `*` or comma-separated URLs — **not** JSON like `["*"]`.
 
-Verify:
-```
-GET https://celestra-hiring-api.onrender.com/api/v1/health
-Docs: https://celestra-hiring-api.onrender.com/api/v1/docs
-```
+Remove unused Redis env vars (`REDIS_URL`, `CELERY_BROKER_URL`) if you're not running workers.
 
-### Default admin
-- Email: `admin@celestra.ai`
-- Password: auto-generated — copy it from the web service's **Environment** tab (`FIRST_SUPERUSER_PASSWORD`).
+### First-time Blueprint deploy
 
-> **Free-tier note:** the web service sleeps after ~15 min of inactivity and cold-starts on the next request (a few seconds). The free PostgreSQL instance expires ~30 days after creation. Background Celery workers are not included on the free tier (see comments in `render.yaml`); the API runs fully without them.
+1. [dashboard.render.com](https://dashboard.render.com) → **New → Blueprint**
+2. Select repo `hiring-ai-v2-backend`
+3. Click **Apply**
 
-### Troubleshooting deploy failures
+### Verify backend is live
 
-If Render shows **"Exited with status 1 while running your code"**, check the **Logs** tab. Common causes and fixes:
-
-| Symptom | Fix |
-|---------|-----|
-| `ValidationError` on `BACKEND_CORS_ORIGINS` | Set env var to `*` (not a JSON string) |
-| `bcrypt` / `passlib` error during startup | Fixed in latest commit — redeploy |
-| `SSL connection required` / DB connect error | Ensure `DATABASE_URL` is wired from the Render Postgres instance |
-| `DATABASE_URL` missing | Blueprint must link `celestra-db` → web service |
-| Build OOM on free tier | LangChain deps are heavy; build may take 3–5 min — wait and retry |
-
-After redeploying, verify:
 ```
 GET https://<your-service>.onrender.com/api/v1/health
+GET https://<your-service>.onrender.com/api/v1/docs
 ```
-Should return `{"status":"ok",...}` even before the database is fully ready.
 
 ---
 
-## Part 2 — Frontend on Vercel (free)
+## Frontend on Vercel
 
-1. Go to <https://vercel.com> and sign in with GitHub.
-2. Click **Add New → Project** and import **`hiring-ai-v2-frontend`**.
-3. Vercel auto-detects the framework (Vite / Next.js).
-4. Add an **Environment Variable** pointing at the Render backend:
+Your frontend is deployed at:
+**https://hiring-ai-v2-frontend.vercel.app**
 
-   For **Vite**:
-   ```
-   VITE_API_BASE_URL = https://celestra-hiring-api.onrender.com/api/v1
-   ```
-   For **Next.js**:
-   ```
-   NEXT_PUBLIC_API_BASE_URL = https://celestra-hiring-api.onrender.com/api/v1
-   ```
-   (Use the exact variable name your frontend reads.)
+> **Note:** The frontend currently uses **mock data** (`src/lib/mock-data.ts`). It does not call the backend API yet. The UI works standalone; connecting it to Render is a separate step.
 
-5. Click **Deploy**. Your frontend will be live at:
-   ```
-   https://hiring-ai-v2-frontend.vercel.app
-   ```
+When you're ready to connect the frontend to Render, add this env var in **Vercel → Project → Settings → Environment Variables**:
+
+```
+NEXT_PUBLIC_API_BASE_URL = https://<your-render-service>.onrender.com/api/v1
+```
+
+Then update `BACKEND_CORS_ORIGINS` on Render to include your Vercel URL:
+```
+https://hiring-ai-v2-frontend.vercel.app,https://hiring-ai-v2-frontend-shouryaveggalams-projects.vercel.app
+```
 
 ---
 
-## Part 3 — Connect the two (CORS)
+## Why previous deploys failed
 
-After the frontend is live, allow its origin on the backend:
-
-1. In Render → `celestra-hiring-api` → **Environment**, set:
-   ```
-   BACKEND_CORS_ORIGINS = ["https://hiring-ai-v2-frontend.vercel.app"]
-   ```
-   (Add any Vercel preview URLs you use too.)
-2. Save — Render redeploys automatically.
-
-The API uses **bearer tokens** (not cookies), so requests work cross-origin once the origin is allowlisted.
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `SettingsError: BACKEND_CORS_ORIGINS` | pydantic tried to JSON-decode `*` as a list | Fixed — field is now a plain string |
+| `Exited with status 1` (startup) | App blocked on DB init before binding PORT | Fixed — DB init runs in background |
+| `bash start.sh` failure | Windows CRLF line endings | Removed — direct uvicorn command |
+| Heavy deps OOM | LangChain/Celery on free tier | Fixed — `requirements-prod.txt` is slim |
 
 ---
 
-## Endpoint summary
+## Default admin (after backend is live)
 
-| Purpose | URL |
-|---------|-----|
-| API base | `https://celestra-hiring-api.onrender.com/api/v1` |
-| Swagger docs | `https://celestra-hiring-api.onrender.com/api/v1/docs` |
-| Health check | `https://celestra-hiring-api.onrender.com/api/v1/health` |
-| WebSocket | `wss://celestra-hiring-api.onrender.com/api/v1/ws/hiring` |
-
----
-
-## Alternative: deploy backend via Docker on Render
-
-The repo also has a `backend/Dockerfile`. Instead of the Python runtime you can
-create a web service with **Runtime = Docker**, **Root Directory = `backend`**,
-and the same environment variables as in `render.yaml`.
+```
+Email:    admin@celestra.ai
+Password: value of FIRST_SUPERUSER_PASSWORD in Render env
+```

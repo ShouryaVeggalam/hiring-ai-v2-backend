@@ -17,10 +17,12 @@ def configure_logging() -> None:
     log_level = logging.DEBUG if settings.DEBUG else logging.INFO
 
     timestamper = structlog.processors.TimeStamper(fmt="iso")
+    # NOTE: ``add_logger_name`` is intentionally omitted — it requires a logger
+    # with a ``.name`` attribute, which ``PrintLoggerFactory`` does not provide
+    # (causing ``AttributeError: 'PrintLogger' object has no attribute 'name'``).
     shared_processors: list = [
         structlog.contextvars.merge_contextvars,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.add_logger_name,
+        structlog.processors.add_log_level,
         timestamper,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,

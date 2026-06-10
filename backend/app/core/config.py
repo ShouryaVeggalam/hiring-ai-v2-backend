@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     DATABASE_URL: str | None = None
     SQL_ECHO: bool = False
+    # Create tables on startup (handy for free PaaS without a migration step).
+    AUTO_CREATE_TABLES: bool = True
 
     # ---- Redis / Celery ----
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -71,6 +73,23 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.APP_ENV.lower() == "production"
 
+    @staticmethod
+    def _normalize_db_url(url: str) -> str:
+        """Normalise provider-supplied URLs to a psycopg2 driver URL.
+
+        Managed hosts (Render, Heroku, Railway, …) hand out URLs like
+        ``postgres://`` or ``postgresql://``; SQLAlchemy needs an explicit
+        driver, so we coerce them to ``postgresql+psycopg2://``. SQLite URLs
+        are passed through untouched.
+        """
+        if url.startswith("sqlite"):
+            return url
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        if url.startswith("postgresql://"):
+            url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+        return url
+
     @property
     def sqlalchemy_database_uri(self) -> str:
         """Resolve the SQLAlchemy connection URI.
@@ -79,7 +98,7 @@ class Settings(BaseSettings):
         one from the individual Postgres settings.
         """
         if self.DATABASE_URL:
-            return self.DATABASE_URL
+            return self._normalize_db_url(self.DATABASE_URL)
         return (
             f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"

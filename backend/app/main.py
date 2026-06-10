@@ -50,8 +50,9 @@ def _seed_superuser() -> None:
 async def lifespan(_: FastAPI):
     configure_logging()
     logger.info("startup", app=settings.APP_NAME, env=settings.APP_ENV, version=__version__)
-    # Create tables in dev; production should use Alembic migrations.
-    if not settings.is_production:
+    # Create tables when enabled (default). For controlled rollouts use Alembic
+    # and set AUTO_CREATE_TABLES=false.
+    if settings.AUTO_CREATE_TABLES or not settings.is_production:
         Base.metadata.create_all(bind=engine)
     _seed_superuser()
     yield
@@ -73,12 +74,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS
-    origins = settings.BACKEND_CORS_ORIGINS
+    # CORS. A wildcard origin cannot be combined with credentials per the
+    # CORS spec, so disable credentials in that case (the API uses bearer
+    # tokens, not cookies, so this is safe).
+    origins = settings.BACKEND_CORS_ORIGINS or ["*"]
+    allow_all = origins == ["*"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins if origins != ["*"] else ["*"],
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=not allow_all,
         allow_methods=["*"],
         allow_headers=["*"],
     )
